@@ -19,7 +19,8 @@ interface PlaceFormProps {
   /** True when this world currently has no places, so this new place will auto-become the base camp. */
   willBecomeBaseCamp: boolean
   onCancel: () => void
-  onSubmit: (input: PlaceInput) => void
+  /** Resolves to whether the save succeeded — the form stays open with an error on failure, so input isn't lost and nothing gets double-submitted. */
+  onSubmit: (input: PlaceInput) => Promise<boolean>
 }
 
 type CoordinateKey = 'overworldX' | 'overworldZ' | 'netherX' | 'netherZ'
@@ -82,6 +83,8 @@ export function PlaceForm({
     buildInitialFields(initial),
   )
   const [errors, setErrors] = useState<PlaceFormErrors>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const updateText =
     (key: 'name' | 'description' | 'y') =>
@@ -115,8 +118,9 @@ export function PlaceForm({
     })
   }
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (submitting) return
     const values: PlaceFormValues = {
       name: fields.name,
       overworldX: fields.overworldX.value,
@@ -131,7 +135,13 @@ export function PlaceForm({
       setErrors(result.errors)
       return
     }
-    onSubmit({ ...result.data, categoryId: fields.categoryId })
+    setSubmitting(true)
+    setSubmitError(null)
+    const success = await onSubmit({ ...result.data, categoryId: fields.categoryId })
+    setSubmitting(false)
+    if (!success) {
+      setSubmitError('저장에 실패했습니다. 다시 시도해주세요.')
+    }
   }
 
   const overworldPoint = tryParseCoordinatePoint(
@@ -302,19 +312,25 @@ export function PlaceForm({
           />
         </label>
 
+        {submitError && (
+          <p className="mb-2 text-xs text-red-400">{submitError}</p>
+        )}
+
         <div className="flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
+            disabled={submitting}
             className="rounded px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
           >
             취소
           </button>
           <button
             type="submit"
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium hover:bg-blue-500"
+            disabled={submitting}
+            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium hover:bg-blue-500 disabled:opacity-50"
           >
-            저장
+            {submitting ? '저장 중...' : '저장'}
           </button>
         </div>
       </form>

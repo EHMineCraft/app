@@ -36,6 +36,7 @@ interface MapCanvasProps {
   selectedId: string | null
   onSelect: (id: string | null) => void
   dimension: Dimension
+  isLoading?: boolean
 }
 
 export function MapCanvas({
@@ -43,6 +44,7 @@ export function MapCanvas({
   selectedId,
   onSelect,
   dimension,
+  isLoading = false,
 }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -196,12 +198,20 @@ export function MapCanvas({
         {Math.round(viewport.centerZ)}
       </div>
 
-      {markers.length === 0 && (
+      {isLoading ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <p className="rounded bg-black/60 px-3 py-2 text-sm text-neutral-300">
-            표시할 장소가 없습니다. 좌측 하단 + 버튼으로 추가해보세요.
+            불러오는 중...
           </p>
         </div>
+      ) : (
+        markers.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <p className="rounded bg-black/60 px-3 py-2 text-sm text-neutral-300">
+              표시할 장소가 없습니다. 좌측 하단 + 버튼으로 추가해보세요.
+            </p>
+          </div>
+        )
       )}
 
       <div className="absolute bottom-3 right-3 flex flex-col gap-1">

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useAuthStore } from '../../auth/store/useAuthStore'
 import { CategoryFilterBar } from '../../categories/components/CategoryFilterBar'
 import { CategoryManagerModal } from '../../categories/components/CategoryManagerModal'
-import { useCategoriesForWorld } from '../../categories/store/useCategoriesStore'
+import { useCategoriesForWorld, useCategoriesStore } from '../../categories/store/useCategoriesStore'
 import { PlaceDetailPanel } from '../../places/components/PlaceDetailPanel'
 import { PlaceForm } from '../../places/components/PlaceForm'
 import { ReassignBaseCampDialog } from '../../places/components/ReassignBaseCampDialog'
@@ -32,13 +32,26 @@ const DEFAULT_MARKER_COLOR = '#38bdf8'
 
 export function MapPage() {
   const { worldId } = useParams<{ worldId: string }>()
+  const uid = useAuthStore((s) => s.user?.uid)
+
   const places = usePlacesForWorld(worldId ?? '')
+  const placesLoading = usePlacesStore((s) =>
+    worldId ? (s.loadingByWorld[worldId] ?? false) : false,
+  )
+  const placesError = usePlacesStore((s) =>
+    worldId ? s.errorByWorld[worldId] : null,
+  )
+  const loadPlaces = usePlacesStore((s) => s.loadPlaces)
   const addPlace = usePlacesStore((s) => s.addPlace)
   const updatePlace = usePlacesStore((s) => s.updatePlace)
   const removePlace = usePlacesStore((s) => s.removePlace)
   const setBaseCamp = usePlacesStore((s) => s.setBaseCamp)
 
   const categories = useCategoriesForWorld(worldId ?? '')
+  const categoriesError = useCategoriesStore((s) =>
+    worldId ? s.errorByWorld[worldId] : null,
+  )
+  const loadCategories = useCategoriesStore((s) => s.loadCategories)
   const categoryMap = useMemo(
     () => new Map(categories.map((c) => [c.id, c])),
     [categories],
@@ -47,11 +60,19 @@ export function MapPage() {
   const viewport = useMapViewportStore((s) => s.viewport)
   const setCenter = useMapViewportStore((s) => s.setCenter)
 
-  const uid = useAuthStore((s) => s.user?.uid)
   const rememberSelectedWorld = useWorldsStore((s) => s.selectWorld)
   useEffect(() => {
     if (uid && worldId) rememberSelectedWorld(uid, worldId)
   }, [uid, worldId, rememberSelectedWorld])
+
+  // Fetch this world's places/categories from Firestore fresh on every
+  // entry — the store then acts as the local cache for the rest of the visit.
+  useEffect(() => {
+    if (uid && worldId) {
+      void loadPlaces(uid, worldId)
+      void loadCategories(uid, worldId)
+    }
+  }, [uid, worldId, loadPlaces, loadCategories])
 
   // The initial dimension follows wherever the base camp actually has a
   // coordinate, so map entry always lands the user on solid ground.
@@ -102,7 +123,7 @@ export function MapPage() {
     [places, dimension, hiddenCategoryKeys, categoryMap],
   )
 
-  if (!worldId) {
+  if (!worldId || !uid) {
     return (
       <div className="flex flex-1 items-center justify-center text-neutral-400">
         잘못된 접근입니다.
@@ -145,25 +166,32 @@ export function MapPage() {
     setCenter(point)
   }
 
-  const handleSubmit = (input: PlaceInput) => {
+  const handleSubmit = async (input: PlaceInput): Promise<boolean> => {
     if (formState?.mode === 'edit') {
-      updatePlace(worldId, formState.place.id, input)
-    } else if (formState?.mode === 'create-for-basecamp') {
-      const created = addPlace(worldId, input)
-      setBaseCamp(worldId, created.id)
-      removePlace(worldId, formState.oldBaseCampId)
-      setSelectedPlaceId(created.id)
-    } else {
-      const created = addPlace(worldId, input)
-      setSelectedPlaceId(created.id)
+      const ok = await updatePlace(uid, worldId, formState.place.id, input)
+      if (ok) setFormState(null)
+      return ok
     }
+    if (formState?.mode === 'create-for-basecamp') {
+      const created = await addPlace(uid, worldId, input)
+      if (!created) return false
+      await setBaseCamp(uid, worldId, created.id)
+      await removePlace(uid, worldId, formState.oldBaseCampId)
+      setSelectedPlaceId(created.id)
+      setFormState(null)
+      return true
+    }
+    const created = await addPlace(uid, worldId, input)
+    if (!created) return false
+    setSelectedPlaceId(created.id)
     setFormState(null)
+    return true
   }
 
-  const handleAssignExistingAndDelete = (newBaseCampId: string) => {
+  const handleAssignExistingAndDelete = async (newBaseCampId: string) => {
     if (!reassigningBaseCamp) return
-    setBaseCamp(worldId, newBaseCampId)
-    removePlace(worldId, reassigningBaseCamp.id)
+    await setBaseCamp(uid, worldId, newBaseCampId)
+    await removePlace(uid, worldId, reassigningBaseCamp.id)
     setReassigningBaseCamp(null)
     setSelectedPlaceId(null)
   }
@@ -176,6 +204,8 @@ export function MapPage() {
     })
     setReassigningBaseCamp(null)
   }
+
+  const displayedError = placesError ?? categoriesError
 
   return (
     <div className="flex flex-1 flex-col">
@@ -195,12 +225,19 @@ export function MapPage() {
         </button>
       </div>
 
+      {displayedError && (
+        <div className="bg-red-900/60 px-4 py-1.5 text-sm text-red-100">
+          {displayedError}
+        </div>
+      )}
+
       <div className="relative flex flex-1">
         <MapCanvas
           markers={markers}
           selectedId={selectedPlaceId}
           onSelect={setSelectedPlaceId}
           dimension={dimension}
+          isLoading={placesLoading}
         />
 
         <button
@@ -218,11 +255,11 @@ export function MapPage() {
             currentDimension={dimension}
             onEdit={() => setFormState({ mode: 'edit', place: selectedPlace })}
             onDelete={() => {
-              removePlace(worldId, selectedPlace.id)
+              void removePlace(uid, worldId, selectedPlace.id)
               setSelectedPlaceId(null)
             }}
             onRequestDeleteBaseCamp={() => setReassigningBaseCamp(selectedPlace)}
-            onSetBaseCamp={() => setBaseCamp(worldId, selectedPlace.id)}
+            onSetBaseCamp={() => void setBaseCamp(uid, worldId, selectedPlace.id)}
             onClose={() => setSelectedPlaceId(null)}
             onJumpToOtherDimension={handleJumpToOtherDimension}
           />
@@ -242,7 +279,7 @@ export function MapPage() {
           <ReassignBaseCampDialog
             currentBaseCamp={reassigningBaseCamp}
             otherPlaces={places.filter((p) => p.id !== reassigningBaseCamp.id)}
-            onAssignExisting={handleAssignExistingAndDelete}
+            onAssignExisting={(id) => void handleAssignExistingAndDelete(id)}
             onCreateNew={handleCreateNewForBaseCamp}
             onCancel={() => setReassigningBaseCamp(null)}
           />
@@ -250,6 +287,7 @@ export function MapPage() {
 
         {showCategoryManager && (
           <CategoryManagerModal
+            uid={uid}
             worldId={worldId}
             onClose={() => setShowCategoryManager(false)}
           />
