@@ -21,6 +21,20 @@ function firebaseErrorCode(err: unknown): string {
     : 'unknown'
 }
 
+function signInErrorMessage(err: unknown): string {
+  const code = firebaseErrorCode(err)
+  if (code === 'auth/popup-blocked') {
+    return '브라우저가 로그인 팝업을 차단했습니다. 주소창의 팝업 차단 아이콘을 눌러 이 사이트의 팝업을 허용한 뒤 다시 시도해주세요.'
+  }
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return '로그인 팝업이 닫혔습니다. 다시 시도해주세요.'
+  }
+  if (code === 'auth/network-request-failed') {
+    return '네트워크 연결을 확인한 뒤 다시 시도해주세요.'
+  }
+  return `Google 로그인에 실패했습니다 (${code}). 다시 시도해주세요.`
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: true,
@@ -37,9 +51,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       await signInWithPopup(auth, googleAuthProvider)
     } catch (err) {
       console.error('Google sign-in failed:', err)
-      set({
-        error: `Google 로그인에 실패했습니다 (${firebaseErrorCode(err)}). 다시 시도해주세요.`,
-      })
+      set({ error: signInErrorMessage(err) })
     }
   },
 
