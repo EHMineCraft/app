@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Category } from '../../../types/category'
 import type { Place } from '../../../types/place'
 import { DIMENSION_LABEL, type Dimension } from '../../../types/dimension'
+import { useEscapeKey } from '../../../hooks/useEscapeKey'
 
 interface PlaceDetailPanelProps {
   place: Place
@@ -27,6 +28,7 @@ export function PlaceDetailPanel({
   onJumpToOtherDimension,
 }: PlaceDetailPanelProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  useEscapeKey(onClose)
 
   const otherDimension: Dimension =
     currentDimension === 'overworld' ? 'nether' : 'overworld'
@@ -34,9 +36,18 @@ export function PlaceDetailPanel({
     otherDimension === 'nether' ? place.nether !== null : place.overworld !== null
 
   return (
-    <div className="absolute right-3 top-3 z-10 w-72 rounded-lg bg-neutral-900/95 p-4 text-neutral-100 shadow-xl">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="place-detail-heading"
+      className="fixed inset-x-0 bottom-0 z-10 max-h-[70vh] overflow-y-auto rounded-t-2xl bg-neutral-900/95 p-4 text-neutral-100 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-3 sm:top-3 sm:max-h-none sm:w-72 sm:rounded-lg"
+    >
+      <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-neutral-700 sm:hidden" />
       <div className="mb-2 flex items-start justify-between gap-2">
-        <h3 className="flex items-center gap-1.5 text-base font-semibold">
+        <h3
+          id="place-detail-heading"
+          className="flex items-center gap-1.5 text-base font-semibold"
+        >
           {place.isBaseCamp && <span title="베이스캠프">🏠</span>}
           {place.name}
         </h3>

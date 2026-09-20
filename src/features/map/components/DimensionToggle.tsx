@@ -14,8 +14,8 @@ export function DimensionToggle({ dimension, onChange }: DimensionToggleProps) {
         onClick={() => onChange('overworld')}
         className={
           dimension === 'overworld'
-            ? 'bg-emerald-600 px-3 py-1 font-medium text-white'
-            : 'bg-neutral-800 px-3 py-1 text-neutral-300 hover:bg-neutral-700'
+            ? 'bg-emerald-600 px-3 py-2 font-medium text-white'
+            : 'bg-neutral-800 px-3 py-2 text-neutral-300 hover:bg-neutral-700'
         }
       >
         🌍 오버월드
@@ -26,8 +26,8 @@ export function DimensionToggle({ dimension, onChange }: DimensionToggleProps) {
         onClick={() => onChange('nether')}
         className={
           dimension === 'nether'
-            ? 'bg-red-600 px-3 py-1 font-medium text-white'
-            : 'bg-neutral-800 px-3 py-1 text-neutral-300 hover:bg-neutral-700'
+            ? 'bg-red-600 px-3 py-2 font-medium text-white'
+            : 'bg-neutral-800 px-3 py-2 text-neutral-300 hover:bg-neutral-700'
         }
       >
         🔥 네더

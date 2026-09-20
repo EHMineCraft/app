@@ -1,4 +1,5 @@
 import type { Place } from '../../../types/place'
+import { useEscapeKey } from '../../../hooks/useEscapeKey'
 
 interface ReassignBaseCampDialogProps {
   currentBaseCamp: Place
@@ -15,10 +16,19 @@ export function ReassignBaseCampDialog({
   onCreateNew,
   onCancel,
 }: ReassignBaseCampDialogProps) {
+  useEscapeKey(onCancel)
+
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-sm rounded-lg bg-neutral-900 p-5 text-neutral-100 shadow-xl">
-        <h2 className="mb-2 text-lg font-semibold">베이스캠프 재지정 필요</h2>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reassign-basecamp-heading"
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4"
+    >
+      <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-lg bg-neutral-900 p-5 text-neutral-100 shadow-xl">
+        <h2 id="reassign-basecamp-heading" className="mb-2 text-lg font-semibold">
+          베이스캠프 재지정 필요
+        </h2>
         <p className="mb-4 text-sm text-neutral-300">
           {currentBaseCamp.name}은(는) 이 월드의 베이스캠프입니다. 삭제하려면
           먼저 다른 장소를 베이스캠프로 지정해야 합니다.

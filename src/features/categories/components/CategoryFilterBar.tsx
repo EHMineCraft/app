@@ -24,7 +24,7 @@ export function CategoryFilterBar({
             type="button"
             aria-pressed={active}
             onClick={() => onToggle(category.id)}
-            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs ${
               active
                 ? 'border-transparent text-white'
                 : 'border-neutral-700 text-neutral-500'
@@ -43,7 +43,7 @@ export function CategoryFilterBar({
         type="button"
         aria-pressed={!hiddenKeys.has(null)}
         onClick={() => onToggle(null)}
-        className={`rounded-full border px-2.5 py-1 text-xs ${
+        className={`rounded-full border px-2.5 py-1.5 text-xs ${
           !hiddenKeys.has(null)
             ? 'border-neutral-500 bg-neutral-700 text-white'
             : 'border-neutral-700 text-neutral-500'

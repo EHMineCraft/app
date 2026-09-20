@@ -20,6 +20,7 @@ const MARKER_HIT_RADIUS = 12
 const CLICK_MOVE_THRESHOLD = 5
 const WHEEL_ZOOM_FACTOR = 1.15
 const BUTTON_ZOOM_FACTOR = 1.3
+const KEY_PAN_STEP = 40
 
 const BACKGROUND_COLOR: Record<Dimension, string> = {
   overworld: '#171717',
@@ -62,6 +63,13 @@ export function MapCanvas({
     lastY: number
     moved: number
     pointerId: number
+  } | null>(null)
+  // Tracks every currently-down pointer (by id) for pinch-zoom; when a
+  // second finger joins, single-finger drag/click handling steps aside.
+  const activePointersRef = useRef<Map<number, ScreenPoint>>(new Map())
+  const pinchRef = useRef<{
+    lastDistance: number
+    lastMidpoint: ScreenPoint
   } | null>(null)
 
   useEffect(() => {
@@ -116,11 +124,22 @@ export function MapCanvas({
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       e.currentTarget.setPointerCapture(e.pointerId)
-      dragRef.current = {
-        lastX: e.clientX,
-        lastY: e.clientY,
-        moved: 0,
-        pointerId: e.pointerId,
+      activePointersRef.current.set(e.pointerId, {
+        x: e.clientX,
+        y: e.clientY,
+      })
+      if (activePointersRef.current.size === 1) {
+        dragRef.current = {
+          lastX: e.clientX,
+          lastY: e.clientY,
+          moved: 0,
+          pointerId: e.pointerId,
+        }
+      } else {
+        // A second finger joined mid-gesture — hand off to pinch handling
+        // and drop single-finger drag/click state so it doesn't fire too.
+        dragRef.current = null
+        pinchRef.current = null
       }
     },
     [],
@@ -128,6 +147,46 @@ export function MapCanvas({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (!activePointersRef.current.has(e.pointerId)) return
+      activePointersRef.current.set(e.pointerId, {
+        x: e.clientX,
+        y: e.clientY,
+      })
+
+      if (activePointersRef.current.size >= 2) {
+        const canvas = canvasRef.current
+        if (!canvas) return
+        const [p1, p2] = [...activePointersRef.current.values()]
+        const currentDistance = distance(p1, p2)
+        const currentMidpoint: ScreenPoint = {
+          x: (p1.x + p2.x) / 2,
+          y: (p1.y + p2.y) / 2,
+        }
+        const rect = canvas.getBoundingClientRect()
+        if (pinchRef.current && pinchRef.current.lastDistance > 0) {
+          const factor = currentDistance / pinchRef.current.lastDistance
+          if (Number.isFinite(factor) && factor > 0) {
+            zoomAt(
+              { width: rect.width, height: rect.height },
+              {
+                x: currentMidpoint.x - rect.left,
+                y: currentMidpoint.y - rect.top,
+              },
+              factor,
+            )
+          }
+          pan({
+            dx: currentMidpoint.x - pinchRef.current.lastMidpoint.x,
+            dy: currentMidpoint.y - pinchRef.current.lastMidpoint.y,
+          })
+        }
+        pinchRef.current = {
+          lastDistance: currentDistance,
+          lastMidpoint: currentMidpoint,
+        }
+        return
+      }
+
       const drag = dragRef.current
       if (!drag || drag.pointerId !== e.pointerId) return
       const dx = e.clientX - drag.lastX
@@ -137,17 +196,25 @@ export function MapCanvas({
       drag.moved += Math.hypot(dx, dy)
       pan({ dx, dy })
     },
-    [pan],
+    [pan, zoomAt],
   )
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      const drag = dragRef.current
-      dragRef.current = null
-      if (!drag || drag.pointerId !== e.pointerId) return
+      activePointersRef.current.delete(e.pointerId)
+      if (activePointersRef.current.size < 2) {
+        pinchRef.current = null
+      }
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId)
       }
+
+      const drag = dragRef.current
+      // No matching single-finger drag (e.g. this was part of a pinch) —
+      // nothing was a plain click, so skip hit-testing.
+      if (!drag || drag.pointerId !== e.pointerId) return
+      dragRef.current = null
+
       if (drag.moved < CLICK_MOVE_THRESHOLD) {
         const rect = e.currentTarget.getBoundingClientRect()
         const clickPoint: ScreenPoint = {
@@ -179,6 +246,42 @@ export function MapCanvas({
     [zoomAt],
   )
 
+  // Keyboard access for panning/zooming: arrow keys pan, +/- zoom around
+  // the viewport center. Only active while the canvas itself has focus.
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+      switch (e.key) {
+        case 'ArrowUp':
+          e.preventDefault()
+          pan({ dx: 0, dy: KEY_PAN_STEP })
+          break
+        case 'ArrowDown':
+          e.preventDefault()
+          pan({ dx: 0, dy: -KEY_PAN_STEP })
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          pan({ dx: KEY_PAN_STEP, dy: 0 })
+          break
+        case 'ArrowRight':
+          e.preventDefault()
+          pan({ dx: -KEY_PAN_STEP, dy: 0 })
+          break
+        case '+':
+        case '=':
+          e.preventDefault()
+          handleZoomButton(BUTTON_ZOOM_FACTOR)
+          break
+        case '-':
+        case '_':
+          e.preventDefault()
+          handleZoomButton(1 / BUTTON_ZOOM_FACTOR)
+          break
+      }
+    },
+    [pan, handleZoomButton],
+  )
+
   return (
     <div
       ref={containerRef}
@@ -186,11 +289,15 @@ export function MapCanvas({
     >
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 touch-none"
+        tabIndex={0}
+        role="application"
+        aria-label="지도. 방향키로 이동, +/- 키로 확대·축소할 수 있습니다."
+        className="absolute inset-0 touch-none focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onKeyDown={handleKeyDown}
       />
 
       <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/60 px-2 py-1 font-mono text-xs text-neutral-100">
@@ -219,7 +326,7 @@ export function MapCanvas({
           type="button"
           aria-label="확대"
           onClick={() => handleZoomButton(BUTTON_ZOOM_FACTOR)}
-          className="h-8 w-8 rounded bg-black/60 text-lg leading-none text-neutral-100 hover:bg-black/80"
+          className="h-10 w-10 rounded bg-black/60 text-lg leading-none text-neutral-100 hover:bg-black/80"
         >
           +
         </button>
@@ -227,7 +334,7 @@ export function MapCanvas({
           type="button"
           aria-label="축소"
           onClick={() => handleZoomButton(1 / BUTTON_ZOOM_FACTOR)}
-          className="h-8 w-8 rounded bg-black/60 text-lg leading-none text-neutral-100 hover:bg-black/80"
+          className="h-10 w-10 rounded bg-black/60 text-lg leading-none text-neutral-100 hover:bg-black/80"
         >
           −
         </button>

@@ -219,7 +219,7 @@ export function MapPage() {
         <button
           type="button"
           onClick={() => setShowCategoryManager(true)}
-          className="ml-auto rounded border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 hover:bg-neutral-800"
+          className="ml-auto rounded border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800"
         >
           카테고리 관리
         </button>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Category } from '../../../types/category'
+import { useEscapeKey } from '../../../hooks/useEscapeKey'
 import {
   usePlacesForWorld,
   usePlacesStore,
@@ -42,6 +43,7 @@ export function CategoryManagerModal({
     null,
   )
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  useEscapeKey(onClose)
 
   const handleAdd = async () => {
     const name = newName.trim()
@@ -94,10 +96,17 @@ export function CategoryManagerModal({
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-lg bg-neutral-900 p-5 text-neutral-100 shadow-xl">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="category-manager-heading"
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4"
+    >
+      <div className="flex max-h-[90vh] w-full max-w-md flex-col rounded-lg bg-neutral-900 p-5 text-neutral-100 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">카테고리 관리</h2>
+          <h2 id="category-manager-heading" className="text-lg font-semibold">
+            카테고리 관리
+          </h2>
           <button
             type="button"
             onClick={onClose}

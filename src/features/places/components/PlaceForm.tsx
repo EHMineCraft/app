@@ -12,6 +12,7 @@ import {
   type PlaceFormErrors,
   type PlaceFormValues,
 } from '../../../utils/placeValidation'
+import { useEscapeKey } from '../../../hooks/useEscapeKey'
 
 interface PlaceFormProps {
   initial: Place | null
@@ -85,6 +86,7 @@ export function PlaceForm({
   const [errors, setErrors] = useState<PlaceFormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  useEscapeKey(onCancel)
 
   const updateText =
     (key: 'name' | 'description' | 'y') =>
@@ -158,12 +160,17 @@ export function PlaceForm({
     coordinatesDivergeFromConversion(overworldPoint, netherPoint)
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 p-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="place-form-heading"
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 p-4"
+    >
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-md rounded-lg bg-neutral-900 p-5 text-neutral-100 shadow-xl"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-neutral-900 p-5 text-neutral-100 shadow-xl"
       >
-        <h2 className="mb-4 text-lg font-semibold">
+        <h2 id="place-form-heading" className="mb-4 text-lg font-semibold">
           {initial ? '장소 수정' : '장소 추가'}
         </h2>
 
