@@ -1,11 +1,6 @@
 import { create } from 'zustand'
 import type { User } from 'firebase/auth'
-import {
-  getRedirectResult,
-  onAuthStateChanged,
-  signInWithRedirect,
-  signOut,
-} from 'firebase/auth'
+import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
 import { auth, googleAuthProvider } from '../../../lib/firebase/config'
 import { useCategoriesStore } from '../../categories/store/useCategoriesStore'
 import { usePlacesStore } from '../../places/store/usePlacesStore'
@@ -34,11 +29,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   signInWithGoogle: async () => {
     set({ error: null })
     try {
-      // Redirect instead of popup: signInWithPopup gets blocked by browser
-      // popup policies in a lot of real-world setups (seen in production as
-      // auth/popup-blocked), especially inconsistently across browsers/OSes.
-      // Redirect has no popup to block — it navigates away and back instead.
-      await signInWithRedirect(auth, googleAuthProvider)
+      // Popup, with the default firebaseapp.com authDomain: the standard,
+      // most-supported setup. signInWithRedirect + a custom/proxied
+      // authDomain was tried and hit a known, long-open Firebase JS SDK bug
+      // ("missing initial state") in storage-partitioned browsers — a much
+      // deeper problem than an occasional blocked popup.
+      await signInWithPopup(auth, googleAuthProvider)
     } catch (err) {
       console.error('Google sign-in failed:', err)
       set({
@@ -71,27 +67,3 @@ onAuthStateChanged(auth, (user) => {
   }
   previousUid = user?.uid ?? null
 })
-
-// Finalizes a pending redirect sign-in on the page Google sends the user
-// back to. onAuthStateChanged above already picks up a successful result —
-// this exists to (a) surface errors and (b) log the null case, where the
-// browser lost track of the pending redirect (e.g. storage partitioning)
-// and the user silently lands back on the login page with no error at all.
-getRedirectResult(auth)
-  .then((result) => {
-    if (!result) {
-      console.warn(
-        'getRedirectResult: no pending redirect found (result was null) — ' +
-          'if you just came back from Google sign-in, the browser likely ' +
-          'lost track of the in-progress redirect.',
-      )
-    } else {
-      console.log('getRedirectResult: signed in as', result.user.uid)
-    }
-  })
-  .catch((err) => {
-    console.error('Google redirect sign-in failed:', err)
-    useAuthStore.setState({
-      error: `Google 로그인에 실패했습니다 (${firebaseErrorCode(err)}). 다시 시도해주세요.`,
-    })
-  })
