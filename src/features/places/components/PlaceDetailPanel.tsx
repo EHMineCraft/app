@@ -6,7 +6,7 @@ import { useEscapeKey } from '../../../hooks/useEscapeKey'
 
 interface PlaceDetailPanelProps {
   place: Place
-  category: Category | null
+  categories: Category[]
   currentDimension: Dimension
   onEdit: () => void
   onDelete: () => void
@@ -18,7 +18,7 @@ interface PlaceDetailPanelProps {
 
 export function PlaceDetailPanel({
   place,
-  category,
+  categories,
   currentDimension,
   onEdit,
   onDelete,
@@ -61,13 +61,20 @@ export function PlaceDetailPanel({
         </button>
       </div>
 
-      {category && (
-        <div className="mb-2 flex items-center gap-1.5 text-xs text-neutral-300">
-          <span
-            className="h-2.5 w-2.5 rounded-full"
-            style={{ backgroundColor: category.color }}
-          />
-          {category.name}
+      {categories.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {categories.map((category) => (
+            <span
+              key={category.id}
+              className="flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-300"
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: category.color }}
+              />
+              {category.name}
+            </span>
+          ))}
         </div>
       )}
 

@@ -4,7 +4,8 @@ export interface Place {
   id: string
   worldId: string
   name: string
-  categoryId: string | null
+  /** Empty array means uncategorized. */
+  categoryIds: string[]
   overworld: GamePoint | null
   nether: GamePoint | null
   y: number | null
@@ -22,7 +23,7 @@ export interface Place {
  */
 export interface PlaceInput {
   name: string
-  categoryId: string | null
+  categoryIds: string[]
   overworld: GamePoint | null
   nether: GamePoint | null
   y: number | null

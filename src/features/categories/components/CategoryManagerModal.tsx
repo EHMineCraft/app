@@ -75,7 +75,7 @@ export function CategoryManagerModal({
   }
 
   const placesUsingCategory = (categoryId: string) =>
-    places.filter((p) => p.categoryId === categoryId)
+    places.filter((p) => p.categoryIds.includes(categoryId))
 
   const handleDelete = async (categoryId: string) => {
     setDeletingId(categoryId)
@@ -83,7 +83,8 @@ export function CategoryManagerModal({
     for (const place of affected) {
       await updatePlace(uid, worldId, place.id, {
         name: place.name,
-        categoryId: null,
+        // Only drop the deleted category — a multi-category place keeps its others.
+        categoryIds: place.categoryIds.filter((id) => id !== categoryId),
         overworld: place.overworld,
         nether: place.nether,
         y: place.y,

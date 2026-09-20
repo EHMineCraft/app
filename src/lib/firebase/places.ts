@@ -15,7 +15,9 @@ import { db } from './config'
 
 interface PlaceDoc {
   name: string
-  categoryId: string | null
+  /** Older docs may still have a singular categoryId — toPlace() migrates those on read. */
+  categoryIds?: string[]
+  categoryId?: string | null
   overworld: GamePoint | null
   nether: GamePoint | null
   y: number | null
@@ -38,7 +40,8 @@ function toPlace(worldId: string, id: string, data: PlaceDoc): Place {
     id,
     worldId,
     name: data.name,
-    categoryId: data.categoryId,
+    categoryIds:
+      data.categoryIds ?? (data.categoryId ? [data.categoryId] : []),
     overworld: data.overworld,
     nether: data.nether,
     y: data.y,

@@ -6,6 +6,7 @@ import { CategoryManagerModal } from '../../categories/components/CategoryManage
 import { useCategoriesForWorld, useCategoriesStore } from '../../categories/store/useCategoriesStore'
 import { PlaceDetailPanel } from '../../places/components/PlaceDetailPanel'
 import { PlaceForm } from '../../places/components/PlaceForm'
+import { PlaceListModal } from '../../places/components/PlaceListModal'
 import { ReassignBaseCampDialog } from '../../places/components/ReassignBaseCampDialog'
 import {
   usePlacesForWorld,
@@ -88,6 +89,7 @@ export function MapPage() {
     null,
   )
   const [showCategoryManager, setShowCategoryManager] = useState(false)
+  const [showPlaceList, setShowPlaceList] = useState(false)
   const [hiddenCategoryKeys, setHiddenCategoryKeys] = useState<
     Set<string | null>
   >(new Set())
@@ -109,15 +111,21 @@ export function MapPage() {
     () =>
       places
         .filter((p) => p[dimension] !== null)
-        .filter((p) => !hiddenCategoryKeys.has(p.categoryId))
+        // Visible if any one of its categories is visible (or it's
+        // uncategorized and "미분류" is visible) — OR semantics, not AND.
+        .filter((p) =>
+          p.categoryIds.length === 0
+            ? !hiddenCategoryKeys.has(null)
+            : p.categoryIds.some((id) => !hiddenCategoryKeys.has(id)),
+        )
         .map((p) => ({
           id: p.id,
           name: p.name,
           x: p[dimension]!.x,
           z: p[dimension]!.z,
-          color: p.categoryId
-            ? (categoryMap.get(p.categoryId)?.color ?? DEFAULT_MARKER_COLOR)
-            : DEFAULT_MARKER_COLOR,
+          color:
+            (p.categoryIds[0] && categoryMap.get(p.categoryIds[0])?.color) ??
+            DEFAULT_MARKER_COLOR,
           isBaseCamp: p.isBaseCamp,
         })),
     [places, dimension, hiddenCategoryKeys, categoryMap],
@@ -132,9 +140,9 @@ export function MapPage() {
   }
 
   const selectedPlace = places.find((p) => p.id === selectedPlaceId) ?? null
-  const selectedCategory = selectedPlace?.categoryId
-    ? (categoryMap.get(selectedPlace.categoryId) ?? null)
-    : null
+  const selectedCategories = (selectedPlace?.categoryIds ?? [])
+    .map((id) => categoryMap.get(id))
+    .filter((c): c is NonNullable<typeof c> => c !== undefined)
 
   const toggleCategoryVisibility = (key: string | null) => {
     setHiddenCategoryKeys((prev) => {
@@ -163,6 +171,17 @@ export function MapPage() {
     const point = selectedPlace[target]
     if (!point) return
     setDimension(target)
+    setCenter(point)
+  }
+
+  const handleSelectFromList = (place: Place) => {
+    setSelectedPlaceId(place.id)
+    setShowPlaceList(false)
+    const point = place[dimension] ?? place.overworld ?? place.nether
+    if (!point) return
+    if (!place[dimension]) {
+      setDimension(place.overworld ? 'overworld' : 'nether')
+    }
     setCenter(point)
   }
 
@@ -218,8 +237,15 @@ export function MapPage() {
         />
         <button
           type="button"
-          onClick={() => setShowCategoryManager(true)}
+          onClick={() => setShowPlaceList(true)}
           className="ml-auto rounded border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800"
+        >
+          장소 목록
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowCategoryManager(true)}
+          className="rounded border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800"
         >
           카테고리 관리
         </button>
@@ -251,7 +277,7 @@ export function MapPage() {
         {selectedPlace && !formState && !reassigningBaseCamp && (
           <PlaceDetailPanel
             place={selectedPlace}
-            category={selectedCategory}
+            categories={selectedCategories}
             currentDimension={dimension}
             onEdit={() => setFormState({ mode: 'edit', place: selectedPlace })}
             onDelete={() => {
@@ -290,6 +316,16 @@ export function MapPage() {
             uid={uid}
             worldId={worldId}
             onClose={() => setShowCategoryManager(false)}
+          />
+        )}
+
+        {showPlaceList && (
+          <PlaceListModal
+            places={places}
+            categories={categories}
+            dimension={dimension}
+            onSelectPlace={handleSelectFromList}
+            onClose={() => setShowPlaceList(false)}
           />
         )}
       </div>

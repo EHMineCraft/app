@@ -3,8 +3,8 @@ import type { Category } from '../../../types/category'
 import type { Place, PlaceInput } from '../../../types/place'
 import {
   coordinatesDivergeFromConversion,
-  netherToOverworldCoordinate,
-  overworldToNetherCoordinate,
+  netherToOverworldPoint,
+  overworldToNetherPoint,
 } from '../../../utils/dimensionConversion'
 import {
   tryParseCoordinatePoint,
@@ -24,37 +24,17 @@ interface PlaceFormProps {
   onSubmit: (input: PlaceInput) => Promise<boolean>
 }
 
-type CoordinateKey = 'overworldX' | 'overworldZ' | 'netherX' | 'netherZ'
-
-interface CoordinateField {
-  value: string
-  /** true if this field's value was last set by cross-dimension auto-calculation, not typed by the user. */
-  auto: boolean
-}
+type DimensionScope = 'both' | 'overworld' | 'nether'
 
 interface FieldsState {
   name: string
   description: string
   y: string
-  categoryId: string | null
-  overworldX: CoordinateField
-  overworldZ: CoordinateField
-  netherX: CoordinateField
-  netherZ: CoordinateField
-}
-
-const COUNTERPART: Record<CoordinateKey, CoordinateKey> = {
-  overworldX: 'netherX',
-  overworldZ: 'netherZ',
-  netherX: 'overworldX',
-  netherZ: 'overworldZ',
-}
-
-const CONVERT: Record<CoordinateKey, (n: number) => number> = {
-  overworldX: overworldToNetherCoordinate,
-  overworldZ: overworldToNetherCoordinate,
-  netherX: netherToOverworldCoordinate,
-  netherZ: netherToOverworldCoordinate,
+  categoryIds: string[]
+  overworldX: string
+  overworldZ: string
+  netherX: string
+  netherZ: string
 }
 
 function buildInitialFields(place: Place | null): FieldsState {
@@ -62,12 +42,18 @@ function buildInitialFields(place: Place | null): FieldsState {
     name: place?.name ?? '',
     description: place?.description ?? '',
     y: place?.y != null ? String(place.y) : '',
-    categoryId: place?.categoryId ?? null,
-    overworldX: { value: place?.overworld ? String(place.overworld.x) : '', auto: false },
-    overworldZ: { value: place?.overworld ? String(place.overworld.z) : '', auto: false },
-    netherX: { value: place?.nether ? String(place.nether.x) : '', auto: false },
-    netherZ: { value: place?.nether ? String(place.nether.z) : '', auto: false },
+    categoryIds: place?.categoryIds ?? [],
+    overworldX: place?.overworld ? String(place.overworld.x) : '',
+    overworldZ: place?.overworld ? String(place.overworld.z) : '',
+    netherX: place?.nether ? String(place.nether.x) : '',
+    netherZ: place?.nether ? String(place.nether.z) : '',
   }
+}
+
+function buildInitialDimensionScope(place: Place | null): DimensionScope {
+  if (place?.overworld && !place.nether) return 'overworld'
+  if (place?.nether && !place.overworld) return 'nether'
+  return 'both'
 }
 
 const inputClass =
@@ -83,41 +69,52 @@ export function PlaceForm({
   const [fields, setFields] = useState<FieldsState>(() =>
     buildInitialFields(initial),
   )
+  const [dimensionScope, setDimensionScope] = useState<DimensionScope>(() =>
+    buildInitialDimensionScope(initial),
+  )
   const [errors, setErrors] = useState<PlaceFormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   useEscapeKey(onCancel)
 
-  const updateText =
-    (key: 'name' | 'description' | 'y') =>
+  const updateField =
+    (key: keyof FieldsState) =>
     (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setFields((f) => ({ ...f, [key]: e.target.value }))
 
-  const handleCoordinateChange = (field: CoordinateKey, rawText: string) => {
-    setFields((prev) => {
-      const counterpart = COUNTERPART[field]
-      const counterpartField = prev[counterpart]
-      let nextCounterpart = counterpartField
+  const toggleCategory = (categoryId: string) => {
+    setFields((f) => ({
+      ...f,
+      categoryIds: f.categoryIds.includes(categoryId)
+        ? f.categoryIds.filter((id) => id !== categoryId)
+        : [...f.categoryIds, categoryId],
+    }))
+  }
 
-      // Only auto-fill the counterpart if the user hasn't manually set it themselves.
-      if (counterpartField.auto || counterpartField.value === '') {
-        const trimmed = rawText.trim()
-        if (trimmed === '') {
-          nextCounterpart = { value: '', auto: true }
-        } else {
-          const num = Number(trimmed)
-          if (Number.isFinite(num)) {
-            nextCounterpart = { value: String(CONVERT[field](num)), auto: true }
-          }
-        }
-      }
+  const overworldPoint = tryParseCoordinatePoint(
+    fields.overworldX,
+    fields.overworldZ,
+  )
+  const netherPoint = tryParseCoordinatePoint(fields.netherX, fields.netherZ)
 
-      return {
-        ...prev,
-        [field]: { value: rawText, auto: false },
-        [counterpart]: nextCounterpart,
-      }
-    })
+  const calculateNetherFromOverworld = () => {
+    if (!overworldPoint) return
+    const nether = overworldToNetherPoint(overworldPoint)
+    setFields((f) => ({
+      ...f,
+      netherX: String(nether.x),
+      netherZ: String(nether.z),
+    }))
+  }
+
+  const calculateOverworldFromNether = () => {
+    if (!netherPoint) return
+    const overworld = netherToOverworldPoint(netherPoint)
+    setFields((f) => ({
+      ...f,
+      overworldX: String(overworld.x),
+      overworldZ: String(overworld.z),
+    }))
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -125,10 +122,12 @@ export function PlaceForm({
     if (submitting) return
     const values: PlaceFormValues = {
       name: fields.name,
-      overworldX: fields.overworldX.value,
-      overworldZ: fields.overworldZ.value,
-      netherX: fields.netherX.value,
-      netherZ: fields.netherZ.value,
+      // A dimension-exclusive place ignores whatever sits in the other
+      // side's fields — only the chosen dimension's coordinates are saved.
+      overworldX: dimensionScope === 'nether' ? '' : fields.overworldX,
+      overworldZ: dimensionScope === 'nether' ? '' : fields.overworldZ,
+      netherX: dimensionScope === 'overworld' ? '' : fields.netherX,
+      netherZ: dimensionScope === 'overworld' ? '' : fields.netherZ,
       y: fields.y,
       description: fields.description,
     }
@@ -139,25 +138,24 @@ export function PlaceForm({
     }
     setSubmitting(true)
     setSubmitError(null)
-    const success = await onSubmit({ ...result.data, categoryId: fields.categoryId })
+    const success = await onSubmit({
+      ...result.data,
+      categoryIds: fields.categoryIds,
+    })
     setSubmitting(false)
     if (!success) {
       setSubmitError('저장에 실패했습니다. 다시 시도해주세요.')
     }
   }
 
-  const overworldPoint = tryParseCoordinatePoint(
-    fields.overworldX.value,
-    fields.overworldZ.value,
-  )
-  const netherPoint = tryParseCoordinatePoint(
-    fields.netherX.value,
-    fields.netherZ.value,
-  )
   const showMismatchNotice =
+    dimensionScope === 'both' &&
     overworldPoint !== null &&
     netherPoint !== null &&
     coordinatesDivergeFromConversion(overworldPoint, netherPoint)
+
+  const showOverworldFields = dimensionScope !== 'nether'
+  const showNetherFields = dimensionScope !== 'overworld'
 
   return (
     <div
@@ -178,7 +176,7 @@ export function PlaceForm({
           이름
           <input
             value={fields.name}
-            onChange={updateText('name')}
+            onChange={updateField('name')}
             className={inputClass}
             autoFocus
           />
@@ -187,26 +185,41 @@ export function PlaceForm({
           )}
         </label>
 
-        <label className="mb-3 block text-sm">
-          카테고리
-          <select
-            value={fields.categoryId ?? ''}
-            onChange={(e) =>
-              setFields((f) => ({
-                ...f,
-                categoryId: e.target.value === '' ? null : e.target.value,
-              }))
-            }
-            className={inputClass}
-          >
-            <option value="">미분류</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="mb-3">
+          <span className="block text-sm">카테고리 (여러 개 선택 가능)</span>
+          {categories.length === 0 ? (
+            <p className="mt-1 text-xs text-neutral-500">
+              아직 카테고리가 없습니다. 지도 상단의 "카테고리 관리"에서
+              먼저 만들어주세요.
+            </p>
+          ) : (
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {categories.map((category) => {
+                const checked = fields.categoryIds.includes(category.id)
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    aria-pressed={checked}
+                    onClick={() => toggleCategory(category.id)}
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs ${
+                      checked
+                        ? 'border-transparent text-white'
+                        : 'border-neutral-700 text-neutral-400'
+                    }`}
+                    style={checked ? { backgroundColor: category.color } : undefined}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: category.color }}
+                    />
+                    {category.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
         {willBecomeBaseCamp && (
           <p className="mb-3 text-xs text-emerald-400">
@@ -214,79 +227,123 @@ export function PlaceForm({
           </p>
         )}
 
-        <p className="mb-2 text-xs text-neutral-400">
-          오버월드와 네더 중 한쪽만 입력하면 반대쪽 좌표가 8배 환산으로 자동
-          채워집니다. 자동 계산 값은 추천 좌표이며, 실제 포탈 연결 위치와
-          다를 수 있습니다.
-        </p>
-
-        <div className="mb-1 grid grid-cols-2 gap-2">
-          <label className="text-sm">
-            오버월드 X{' '}
-            {fields.overworldX.auto && (
-              <span className="text-neutral-500">(자동)</span>
-            )}
-            <input
-              value={fields.overworldX.value}
-              onChange={(e) =>
-                handleCoordinateChange('overworldX', e.target.value)
-              }
-              inputMode="numeric"
-              className={inputClass}
-            />
-          </label>
-          <label className="text-sm">
-            오버월드 Z{' '}
-            {fields.overworldZ.auto && (
-              <span className="text-neutral-500">(자동)</span>
-            )}
-            <input
-              value={fields.overworldZ.value}
-              onChange={(e) =>
-                handleCoordinateChange('overworldZ', e.target.value)
-              }
-              inputMode="numeric"
-              className={inputClass}
-            />
-          </label>
+        <div className="mb-3">
+          <span className="block text-sm">표시 범위</span>
+          <div className="mt-1 inline-flex overflow-hidden rounded border border-neutral-700 text-xs">
+            {(
+              [
+                { value: 'both', label: '양쪽' },
+                { value: 'overworld', label: '🌍 오버월드 전용' },
+                { value: 'nether', label: '🔥 네더 전용' },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={dimensionScope === option.value}
+                onClick={() => setDimensionScope(option.value)}
+                className={
+                  dimensionScope === option.value
+                    ? 'bg-blue-600 px-2.5 py-1.5 font-medium text-white'
+                    : 'bg-neutral-800 px-2.5 py-1.5 text-neutral-300 hover:bg-neutral-700'
+                }
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {dimensionScope !== 'both' && (
+            <p className="mt-1 text-xs text-neutral-500">
+              {dimensionScope === 'overworld' ? '네더' : '오버월드'} 지도에는
+              표시되지 않습니다.
+            </p>
+          )}
         </div>
-        {errors.overworld && (
-          <p className="mb-2 mt-1 text-xs text-red-400">{errors.overworld}</p>
+
+        {showOverworldFields && (
+          <>
+            <div className="mb-1 grid grid-cols-2 gap-2">
+              <label className="text-sm">
+                오버월드 X
+                <input
+                  value={fields.overworldX}
+                  onChange={updateField('overworldX')}
+                  inputMode="numeric"
+                  className={inputClass}
+                />
+              </label>
+              <label className="text-sm">
+                오버월드 Z
+                <input
+                  value={fields.overworldZ}
+                  onChange={updateField('overworldZ')}
+                  inputMode="numeric"
+                  className={inputClass}
+                />
+              </label>
+            </div>
+            {errors.overworld && (
+              <p className="mb-1 mt-1 text-xs text-red-400">
+                {errors.overworld}
+              </p>
+            )}
+          </>
         )}
 
-        <div className="mb-1 grid grid-cols-2 gap-2">
-          <label className="text-sm">
-            네더 X{' '}
-            {fields.netherX.auto && (
-              <span className="text-neutral-500">(자동)</span>
-            )}
-            <input
-              value={fields.netherX.value}
-              onChange={(e) =>
-                handleCoordinateChange('netherX', e.target.value)
-              }
-              inputMode="numeric"
-              className={inputClass}
-            />
-          </label>
-          <label className="text-sm">
-            네더 Z{' '}
-            {fields.netherZ.auto && (
-              <span className="text-neutral-500">(자동)</span>
-            )}
-            <input
-              value={fields.netherZ.value}
-              onChange={(e) =>
-                handleCoordinateChange('netherZ', e.target.value)
-              }
-              inputMode="numeric"
-              className={inputClass}
-            />
-          </label>
-        </div>
-        {errors.nether && (
-          <p className="mb-2 mt-1 text-xs text-red-400">{errors.nether}</p>
+        {dimensionScope === 'both' && (
+          <div className="mb-3 flex justify-center">
+            <button
+              type="button"
+              onClick={calculateNetherFromOverworld}
+              disabled={!overworldPoint}
+              className="rounded border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 hover:bg-neutral-800 disabled:opacity-40"
+            >
+              ↓ 이 오버월드 좌표로 네더 좌표 계산 (÷8)
+            </button>
+          </div>
         )}
+
+        {showNetherFields && (
+          <>
+            <div className="mb-1 grid grid-cols-2 gap-2">
+              <label className="text-sm">
+                네더 X
+                <input
+                  value={fields.netherX}
+                  onChange={updateField('netherX')}
+                  inputMode="numeric"
+                  className={inputClass}
+                />
+              </label>
+              <label className="text-sm">
+                네더 Z
+                <input
+                  value={fields.netherZ}
+                  onChange={updateField('netherZ')}
+                  inputMode="numeric"
+                  className={inputClass}
+                />
+              </label>
+            </div>
+            {errors.nether && (
+              <p className="mb-1 mt-1 text-xs text-red-400">{errors.nether}</p>
+            )}
+          </>
+        )}
+
+        {dimensionScope === 'both' && (
+          <div className="mb-3 flex justify-center">
+            <button
+              type="button"
+              onClick={calculateOverworldFromNether}
+              disabled={!netherPoint}
+              className="rounded border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 hover:bg-neutral-800 disabled:opacity-40"
+            >
+              ↑ 이 네더 좌표로 오버월드 좌표 계산 (×8)
+            </button>
+          </div>
+        )}
+
         {errors.coordinates && (
           <p className="mb-2 text-xs text-red-400">{errors.coordinates}</p>
         )}
@@ -302,7 +359,7 @@ export function PlaceForm({
           Y 좌표 (선택)
           <input
             value={fields.y}
-            onChange={updateText('y')}
+            onChange={updateField('y')}
             inputMode="numeric"
             className={inputClass}
           />
@@ -313,7 +370,7 @@ export function PlaceForm({
           설명
           <textarea
             value={fields.description}
-            onChange={updateText('description')}
+            onChange={updateField('description')}
             rows={3}
             className={inputClass}
           />
