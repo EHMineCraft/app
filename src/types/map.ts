@@ -28,4 +28,6 @@ export interface MapMarker {
   name: string
   x: number
   z: number
+  color: string
+  isBaseCamp: boolean
 }

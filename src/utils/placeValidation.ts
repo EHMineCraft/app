@@ -1,4 +1,5 @@
 import type { GamePoint } from '../types/map'
+import { roundCoordinate } from './coordinates'
 
 export interface PlaceFormValues {
   name: string
@@ -35,16 +36,6 @@ type CoordinateFieldParse =
   | { kind: 'value'; value: number }
   | { kind: 'invalid' }
 
-/**
- * Rounds half away from zero (12.5 -> 13, -12.5 -> -13), unlike JS's
- * built-in Math.round which rounds -12.5 to -12. Chosen so the rule reads
- * the same for negative and positive coordinates, which are both common
- * in Minecraft.
- */
-export function roundCoordinate(n: number): number {
-  return Math.sign(n) * Math.round(Math.abs(n))
-}
-
 function parseCoordinateField(raw: string): CoordinateFieldParse {
   const trimmed = raw.trim()
   if (trimmed === '') return { kind: 'empty' }
@@ -70,6 +61,17 @@ function validateCoordinatePair(
     return { value: null, error: 'X, Z 좌표를 모두 입력해주세요.' }
   }
   return { value: { x: x.value, z: z.value }, error: null }
+}
+
+/** Returns a point only when both fields are present and valid — used for live UI checks, not validation. */
+export function tryParseCoordinatePoint(
+  xRaw: string,
+  zRaw: string,
+): GamePoint | null {
+  const x = parseCoordinateField(xRaw)
+  const z = parseCoordinateField(zRaw)
+  if (x.kind === 'value' && z.kind === 'value') return { x: x.value, z: z.value }
+  return null
 }
 
 export function validatePlaceForm(values: PlaceFormValues): PlaceFormResult {

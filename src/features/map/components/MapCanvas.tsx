@@ -5,6 +5,8 @@ import type {
   ScreenPoint,
   Viewport,
 } from '../../../types/map'
+import type { Dimension } from '../../../types/dimension'
+import { DIMENSION_LABEL } from '../../../types/dimension'
 import {
   computeGridStep,
   distance,
@@ -15,18 +17,33 @@ import { useMapViewportStore } from '../store/useMapViewportStore'
 
 const MARKER_RADIUS = 6
 const MARKER_HIT_RADIUS = 12
-const MARKER_COLOR = '#38bdf8'
 const CLICK_MOVE_THRESHOLD = 5
 const WHEEL_ZOOM_FACTOR = 1.15
 const BUTTON_ZOOM_FACTOR = 1.3
+
+const BACKGROUND_COLOR: Record<Dimension, string> = {
+  overworld: '#171717',
+  nether: '#2a1414',
+}
+
+const GRID_COLOR: Record<Dimension, string> = {
+  overworld: '#2a2a2a',
+  nether: '#3d2020',
+}
 
 interface MapCanvasProps {
   markers: MapMarker[]
   selectedId: string | null
   onSelect: (id: string | null) => void
+  dimension: Dimension
 }
 
-export function MapCanvas({ markers, selectedId, onSelect }: MapCanvasProps) {
+export function MapCanvas({
+  markers,
+  selectedId,
+  onSelect,
+  dimension,
+}: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState<CanvasSize>({
@@ -91,8 +108,8 @@ export function MapCanvas({ markers, selectedId, onSelect }: MapCanvasProps) {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    drawMap(ctx, viewport, canvasSize, markers, selectedId)
-  }, [viewport, canvasSize, markers, selectedId])
+    drawMap(ctx, viewport, canvasSize, markers, selectedId, dimension)
+  }, [viewport, canvasSize, markers, selectedId, dimension])
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -175,7 +192,8 @@ export function MapCanvas({ markers, selectedId, onSelect }: MapCanvasProps) {
       />
 
       <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/60 px-2 py-1 font-mono text-xs text-neutral-100">
-        X: {Math.round(viewport.centerX)}, Z: {Math.round(viewport.centerZ)}
+        [{DIMENSION_LABEL[dimension]}] X: {Math.round(viewport.centerX)}, Z:{' '}
+        {Math.round(viewport.centerZ)}
       </div>
 
       {markers.length === 0 && (
@@ -233,11 +251,12 @@ function drawMap(
   canvas: CanvasSize,
   markers: MapMarker[],
   selectedId: string | null,
+  dimension: Dimension,
 ) {
-  ctx.fillStyle = '#171717'
+  ctx.fillStyle = BACKGROUND_COLOR[dimension]
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  drawGrid(ctx, viewport, canvas)
+  drawGrid(ctx, viewport, canvas, dimension)
   drawAxes(ctx, viewport, canvas)
   drawMarkers(ctx, viewport, canvas, markers, selectedId)
 }
@@ -246,11 +265,12 @@ function drawGrid(
   ctx: CanvasRenderingContext2D,
   viewport: Viewport,
   canvas: CanvasSize,
+  dimension: Dimension,
 ) {
   const step = computeGridStep(viewport.scale)
   const bounds = getVisibleGameBounds(viewport, canvas)
 
-  ctx.strokeStyle = '#2a2a2a'
+  ctx.strokeStyle = GRID_COLOR[dimension]
   ctx.lineWidth = 1
   ctx.font = '11px ui-monospace, monospace'
   ctx.fillStyle = '#6b7280'
@@ -306,10 +326,19 @@ function drawMarkers(
   for (const marker of markers) {
     const screen = gameToScreen({ x: marker.x, z: marker.z }, viewport, canvas)
     const isSelected = marker.id === selectedId
+    const radius = marker.isBaseCamp ? MARKER_RADIUS + 2 : MARKER_RADIUS
+
+    if (marker.isBaseCamp) {
+      ctx.beginPath()
+      ctx.arc(screen.x, screen.y, radius + 3, 0, Math.PI * 2)
+      ctx.strokeStyle = '#f5c518'
+      ctx.lineWidth = 2
+      ctx.stroke()
+    }
 
     ctx.beginPath()
-    ctx.arc(screen.x, screen.y, MARKER_RADIUS, 0, Math.PI * 2)
-    ctx.fillStyle = MARKER_COLOR
+    ctx.arc(screen.x, screen.y, radius, 0, Math.PI * 2)
+    ctx.fillStyle = marker.color
     ctx.fill()
     ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(0,0,0,0.6)'
     ctx.lineWidth = isSelected ? 2.5 : 1.5
@@ -317,6 +346,7 @@ function drawMarkers(
 
     ctx.fillStyle = '#e5e5e5'
     ctx.font = '12px ui-sans-serif, system-ui'
-    ctx.fillText(marker.name, screen.x + MARKER_RADIUS + 4, screen.y + 4)
+    const label = marker.isBaseCamp ? `🏠 ${marker.name}` : marker.name
+    ctx.fillText(label, screen.x + radius + 4, screen.y + 4)
   }
 }

@@ -1,0 +1,54 @@
+import { create } from 'zustand'
+import type { User } from 'firebase/auth'
+import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
+import { auth, googleAuthProvider } from '../../../lib/firebase/config'
+import { useCategoriesStore } from '../../categories/store/useCategoriesStore'
+import { usePlacesStore } from '../../places/store/usePlacesStore'
+import { useWorldsStore } from '../../worlds/store/useWorldsStore'
+
+interface AuthState {
+  user: User | null
+  /** True until the first onAuthStateChanged callback fires — avoids flashing the login page during startup. */
+  isLoading: boolean
+  error: string | null
+  signInWithGoogle: () => Promise<void>
+  logOut: () => Promise<void>
+}
+
+export const useAuthStore = create<AuthState>((set) => ({
+  user: null,
+  isLoading: true,
+  error: null,
+
+  signInWithGoogle: async () => {
+    set({ error: null })
+    try {
+      await signInWithPopup(auth, googleAuthProvider)
+    } catch {
+      set({ error: 'Google 로그인에 실패했습니다. 다시 시도해주세요.' })
+    }
+  },
+
+  logOut: async () => {
+    try {
+      await signOut(auth)
+    } catch {
+      set({ error: '로그아웃에 실패했습니다. 다시 시도해주세요.' })
+    }
+  },
+}))
+
+// Firebase SDK manages the actual session; this just mirrors its current
+// user into the store so components can subscribe without touching the SDK.
+let previousUid: string | null = null
+onAuthStateChanged(auth, (user) => {
+  useAuthStore.setState({ user, isLoading: false })
+  // Clear every other store's cached data on logout (or account switch) so
+  // the next account never sees a residual trace of the previous one.
+  if (previousUid !== null && user?.uid !== previousUid) {
+    useWorldsStore.getState().reset()
+    usePlacesStore.getState().reset()
+    useCategoriesStore.getState().reset()
+  }
+  previousUid = user?.uid ?? null
+})
