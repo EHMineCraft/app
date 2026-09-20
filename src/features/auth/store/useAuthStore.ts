@@ -72,12 +72,26 @@ onAuthStateChanged(auth, (user) => {
   previousUid = user?.uid ?? null
 })
 
-// Surfaces errors from a just-completed redirect sign-in (e.g. a Google
-// account already linked to a different provider). onAuthStateChanged above
-// already picks up a successful result, so this only needs to handle failure.
-getRedirectResult(auth).catch((err) => {
-  console.error('Google redirect sign-in failed:', err)
-  useAuthStore.setState({
-    error: `Google 로그인에 실패했습니다 (${firebaseErrorCode(err)}). 다시 시도해주세요.`,
+// Finalizes a pending redirect sign-in on the page Google sends the user
+// back to. onAuthStateChanged above already picks up a successful result —
+// this exists to (a) surface errors and (b) log the null case, where the
+// browser lost track of the pending redirect (e.g. storage partitioning)
+// and the user silently lands back on the login page with no error at all.
+getRedirectResult(auth)
+  .then((result) => {
+    if (!result) {
+      console.warn(
+        'getRedirectResult: no pending redirect found (result was null) — ' +
+          'if you just came back from Google sign-in, the browser likely ' +
+          'lost track of the in-progress redirect.',
+      )
+    } else {
+      console.log('getRedirectResult: signed in as', result.user.uid)
+    }
   })
-})
+  .catch((err) => {
+    console.error('Google redirect sign-in failed:', err)
+    useAuthStore.setState({
+      error: `Google 로그인에 실패했습니다 (${firebaseErrorCode(err)}). 다시 시도해주세요.`,
+    })
+  })

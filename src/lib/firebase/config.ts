@@ -15,3 +15,7 @@ export const firebaseApp = initializeApp(firebaseConfig)
 export const auth = getAuth(firebaseApp)
 export const db = getFirestore(firebaseApp)
 export const googleAuthProvider = new GoogleAuthProvider()
+// Always show Google's account chooser instead of silently reusing whatever
+// session the browser considers "current" — avoids surprising mismatches
+// when the browser has multiple Google sessions active.
+googleAuthProvider.setCustomParameters({ prompt: 'select_account' })
