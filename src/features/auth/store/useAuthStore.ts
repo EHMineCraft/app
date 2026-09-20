@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import type { User } from 'firebase/auth'
-import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
+import {
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithRedirect,
+  signOut,
+} from 'firebase/auth'
 import { auth, googleAuthProvider } from '../../../lib/firebase/config'
 import { useCategoriesStore } from '../../categories/store/useCategoriesStore'
 import { usePlacesStore } from '../../places/store/usePlacesStore'
@@ -15,6 +20,12 @@ interface AuthState {
   logOut: () => Promise<void>
 }
 
+function firebaseErrorCode(err: unknown): string {
+  return err && typeof err === 'object' && 'code' in err
+    ? String((err as { code: unknown }).code)
+    : 'unknown'
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: true,
@@ -23,15 +34,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   signInWithGoogle: async () => {
     set({ error: null })
     try {
-      await signInWithPopup(auth, googleAuthProvider)
+      // Redirect instead of popup: signInWithPopup gets blocked by browser
+      // popup policies in a lot of real-world setups (seen in production as
+      // auth/popup-blocked), especially inconsistently across browsers/OSes.
+      // Redirect has no popup to block — it navigates away and back instead.
+      await signInWithRedirect(auth, googleAuthProvider)
     } catch (err) {
       console.error('Google sign-in failed:', err)
-      const code =
-        err && typeof err === 'object' && 'code' in err
-          ? String((err as { code: unknown }).code)
-          : 'unknown'
       set({
-        error: `Google 로그인에 실패했습니다 (${code}). 다시 시도해주세요.`,
+        error: `Google 로그인에 실패했습니다 (${firebaseErrorCode(err)}). 다시 시도해주세요.`,
       })
     }
   },
@@ -59,4 +70,14 @@ onAuthStateChanged(auth, (user) => {
     useCategoriesStore.getState().reset()
   }
   previousUid = user?.uid ?? null
+})
+
+// Surfaces errors from a just-completed redirect sign-in (e.g. a Google
+// account already linked to a different provider). onAuthStateChanged above
+// already picks up a successful result, so this only needs to handle failure.
+getRedirectResult(auth).catch((err) => {
+  console.error('Google redirect sign-in failed:', err)
+  useAuthStore.setState({
+    error: `Google 로그인에 실패했습니다 (${firebaseErrorCode(err)}). 다시 시도해주세요.`,
+  })
 })
